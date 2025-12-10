@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Registrar Ponto — PontoFace</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #070710;
+        --surface: #0f0f1a;
+        --surface2: #171726;
+        --border: #222235;
+        --accent: #6c63ff;
+        --accent2: #a78bfa;
+        --success: #10d9a0;
+        --warning: #f59e0b;
+        --error: #ff4d6d;
+        --text: #e8e8f0;
+        --muted: #5a5a78;
+        --font-head: "Syne", sans-serif;
+        --font-body: "DM Sans", sans-serif;
+        --font-mono: "DM Mono", monospace;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-body);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        overflow-x: hidden;
+      }
+
+      .card {
+        background: var(--surface);
+        width: 100%;
+        max-width: 480px;
+        border-radius: 24px;
+        border: 1px solid var(--border);
+        padding: 32px;
+        position: relative;
+      }
+
+      .cam-wrapper {
+        width: 100%;
+        aspect-ratio: 3/4;
+        background: #000;
+        border-radius: 20px;
+        overflow: hidden;
+        position: relative;
+        border: 1px solid var(--border);
+      }
+
+      video,
+      canvas {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .btn {
+        width: 100%;
+        padding: 16px;
+        border-radius: 12px;
+        border: none;
+        font-family: var(--font-head);
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 15px;
+        transition: 0.3s;
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: white;
+      }
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      #log-area {
+        margin-top: 20px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted);
+        background: #05050a;
+        padding: 10px;
+        border-radius: 8px;
+        max-height: 100px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="main-card">
+      <h1 style="font-family: var(--font-head); margin-bottom: 20px">
+        Registrar Ponto
+      </h1>
+
+      <div id="step1">
+        <p style="margin-bottom: 10px">Selecione o Usuário:</p>
+        <select
+          id="user-select"
+          class="btn"
+          style="background: var(--surface2); color: white; text-align: left"
+        >
+          <option value="">Carregando usuários...</option>
+        </select>
+      </div>
+
+      <div id="step2" style="margin-top: 20px">
+        <div class="cam-wrapper" id="cam-wrapper2">
+          <video id="video2" autoplay playsinline></video>
+          <canvas id="canvas2" style="display: none"></canvas>
+        </div>
+
+        <button id="btn-start2" class="btn btn-primary">Ligar Câmera</button>
+        <button
+          id="btn-bater"
+          class="btn btn-primary"
+          style="background: var(--success)"
+          disabled
+        >
+          Bater Ponto
+        </button>
+      </div>
+
+      <div id="log-area"></div>
+    </div>
+
+    <div
+      class="card"
+      id="success-panel"
+      style="display: none; text-align: center"
+    >
+      <h2 style="color: var(--success)">Ponto Registrado!</h2>
+      <button onclick="location.reload()" class="btn btn-primary">
+        Voltar
+      </button>
+    </div>
+
+    <div class="card" id="fail-panel" style="display: none; text-align: center">
+      <h2 style="color: var(--error)">Falha na Autenticação</h2>
+      <p id="fail-msg"></p>
+      <button onclick="location.reload()" class="btn btn-primary">
+        Tentar Novamente
+      </button>
+    </div>
+
+    <script>
+      let stream2 = null;
+      let usuarioSelecionado = null;
+      let fotoCapturadaBase64 = null;
+
+      function log(msg, type) {
+        const logArea = document.getElementById("log-area");
+        const time = new Date().toLocaleTimeString();
+        logArea.innerHTML += `<div>[${time}] ${msg}</div>`;
+        logArea.scrollTop = logArea.scrollHeight;
+      }
+
+      function carregarUsuarios() {
+        const raw = localStorage.getItem("__usuarios");
+        const select = document.getElementById("user-select");
+        if (raw) {
+          const users = JSON.parse(raw);
+          select.innerHTML = '<option value="">Selecione seu nome...</option>';
+          users.forEach((u) => {
+            const opt = document.createElement("option");
+            opt.value = u.__id;
+            opt.textContent = u.nome;
+            select.appendChild(opt);
+          });
+
+          if (users.length === 1) {
+            select.value = users[0].__id;
+            usuarioSelecionado = users[0];
+            log("Usuário auto-selecionado: " + usuarioSelecionado.nome);
+          }
+
+          log(users.length + " usuário(s) carregado(s).");
+        }
+      }
+
+      document.getElementById("user-select").addEventListener("change", (e) => {
+        const users = JSON.parse(localStorage.getItem("__usuarios"));
+        usuarioSelecionado = users.find((u) => u.__id === e.target.value);
+        if (usuarioSelecionado)
+          log("Usuário selecionado: " + usuarioSelecionado.nome);
+      });
+
+      document
+        .getElementById("btn-start2")
+        .addEventListener("click", async () => {
+          try {
+            stream2 = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: "user" },
+            });
+            document.getElementById("video2").srcObject = stream2;
+            document.getElementById("btn-start2").disabled = true;
+            document.getElementById("btn-bater").disabled = false;
+            log("Câmera iniciada com sucesso.");
+          } catch (err) {
+            log("Erro ao acessar câmera: " + err.message, "err");
+          }
+        });
+
+      document
+        .getElementById("btn-bater")
+        .addEventListener("click", async () => {
+          if (!usuarioSelecionado) {
+            alert("Selecione um usuário primeiro!");
+            return;
+          }
+
+          log("Iniciando reconhecimento facial...");
+
+          const video = document.getElementById("video2");
+          const canvas = document.getElementById("canvas2");
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.getContext("2d").drawImage(video, 0, 0);
+
+          fotoCapturadaBase64 = canvas.toDataURL("image/jpeg");
+
+          try {
+            const response = await fetch(
+              "http://localhost:3000/projeto-ponto",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  fotoCapturada: fotoCapturadaBase64,
+                  fotoReferencia: usuarioSelecionado.foto_referencia_url,
+                }),
+              },
+            );
+
+            if (!response.ok) throw new Error("Erro na resposta do servidor");
+
+            const data = await response.json();
+
+            if (
+              data.resultado &&
+              data.resultado.toUpperCase().includes("SIM")
+            ) {
+              document.getElementById("main-card").style.display = "none";
+              document.getElementById("success-panel").style.display = "block";
+              log("✅ Sucesso: Biometria confirmada.");
+            } else {
+              throw new Error("Rosto não confere com o cadastro.");
+            }
+          } catch (err) {
+            log("Erro: " + err.message, "err");
+            document.getElementById("fail-msg").textContent = err.message;
+            document.getElementById("main-card").style.display = "none";
+            document.getElementById("fail-panel").style.display = "block";
+          }
+        });
+
+      window.onload = carregarUsuarios;
+    </script>
+  </body>
+</html>
